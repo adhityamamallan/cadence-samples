@@ -169,19 +169,13 @@ Approve or reject within 1 hour, or the report expires.
 {{end}}
 ---
 
-### Workflow data
+### Report data
 
-Status, from the search attributes:
+Status: {% searchAttributes name="CustomKeywordField" /%}
 
-{% searchAttributes name="CustomKeywordField" /%}
+Report ID: {% input path="[0].reportId" /%}
 
-Report ID:
-
-{% input path="[0].reportId" /%}
-
-Approved amount, from the workflow result:
-
-{% result path="approvedAmount" /%}
+Approved amount: {% result path="approvedAmount" /%}
 
 ---
 
@@ -189,7 +183,7 @@ Approved amount, from the workflow result:
 
 {% workflows query="WorkflowType = 'cadence_samples.ExpenseReportWorkflow'" columns="WorkflowID,CloseStatus,CustomKeywordField,StartTime,CloseTime" /%}
 
-{% input-field name="newAmount" label="Amount for the new receipt ({{.report.Currency}})" type="number" default=84.5 required=true /%}
+{% input-field name="newAmount" label="Amount for the new receipt ({{.report.Currency}})" type="number" required=true /%}
 
 {% start
 	workflowType="cadence_samples.ExpenseReportWorkflow"
