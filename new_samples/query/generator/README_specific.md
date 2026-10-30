@@ -76,7 +76,7 @@ cadence --env development \
   --tl cadence-samples-worker \
   --et 7200 \
   --workflow_type cadence_samples.ExpenseReportWorkflow \
-  --input '{"reportId":"EXP-1001","employee":"Sam Lee","department":"Engineering","currency":"USD","items":[{"description":"Hotel, 2 nights","category":"Travel","amount":412.8},{"description":"Client dinner","category":"Meals","amount":96.25},{"description":"Conference pass","category":"Training","amount":350}]}'
+  --input '{"employee":"Sam Lee","department":"Engineering","currency":"USD","items":[{"description":"Hotel, 2 nights","category":"Travel","amount":412.8},{"description":"Client dinner","category":"Meals","amount":96.25},{"description":"Conference pass","category":"Training","amount":350}]}'
 ```
 
 ### What Happens
@@ -103,7 +103,7 @@ The returned Markdoc uses these tags. Each one gets domain, cluster, workflow ID
 
 | Tag | Shows |
 |-----|-------|
-| `{% input /%}` | The workflow input. Arguments are an array, so `path="[0].reportId"` picks a field of the first argument. |
+| `{% input /%}` | The workflow input. Arguments are an array, so `path="[0].employee"` picks a field of the first argument. |
 | `{% result /%}` | The workflow result, or a note while the workflow runs. `path="approvedAmount"` picks one field. |
 | `{% searchAttributes /%}` | The search attributes. `name="CustomKeywordField"` picks one. |
 | `{% workflows query="..." /%}` | A list of workflows that match a visibility query. Needs advanced visibility. |

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"text/template"
 	"time"
 
@@ -12,7 +13,6 @@ import (
 
 // ExpenseReport is the workflow input
 type ExpenseReport struct {
-	ReportID   string        `json:"reportId"`
 	Employee   string        `json:"employee"`
 	Department string        `json:"department"`
 	Currency   string        `json:"currency"`
@@ -28,7 +28,6 @@ type ExpenseItem struct {
 
 // ExpenseDecision is the workflow result
 type ExpenseDecision struct {
-	ReportID        string    `json:"reportId"`
 	Status          string    `json:"status"`
 	RequestedAmount float64   `json:"requestedAmount"`
 	ApprovedAmount  float64   `json:"approvedAmount"`
@@ -70,7 +69,7 @@ type expenseHomeFormattedResponse struct {
 // the returned result, and a list of other expense reports.
 func ExpenseReportWorkflow(ctx workflow.Context, report ExpenseReport) (ExpenseDecision, error) {
 	logger := workflow.GetLogger(ctx)
-	logger.Info("ExpenseReportWorkflow started", zap.String("reportId", report.ReportID))
+	logger.Info("ExpenseReportWorkflow started", zap.String("employee", report.Employee))
 
 	requested := 0.0
 	for _, item := range report.Items {
@@ -86,7 +85,6 @@ func ExpenseReportWorkflow(ctx workflow.Context, report ExpenseReport) (ExpenseD
 	}
 
 	decision := ExpenseDecision{
-		ReportID:        report.ReportID,
 		Status:          ExpenseStatusPending,
 		RequestedAmount: requested,
 	}
@@ -116,7 +114,16 @@ func ExpenseReportWorkflow(ctx workflow.Context, report ExpenseReport) (ExpenseD
 	selector.AddReceive(workflow.GetSignalChannel(ctx, "approve_partial"), func(ch workflow.Channel, _ bool) {
 		var signal ExpenseReviewSignal
 		ch.Receive(ctx, &signal)
-		decide(ExpenseStatusPartial, min(signal.Amount, requested), signal)
+		// Clamp to [0, requested]. The full amount is an approval and zero is a rejection.
+		amount := max(0, min(signal.Amount, requested))
+		switch {
+		case amount >= requested:
+			decide(ExpenseStatusApproved, requested, signal)
+		case amount == 0:
+			decide(ExpenseStatusRejected, 0, signal)
+		default:
+			decide(ExpenseStatusPartial, amount, signal)
+		}
 	})
 	selector.AddReceive(workflow.GetSignalChannel(ctx, "reject"), func(ch workflow.Channel, _ bool) {
 		var signal ExpenseReviewSignal
@@ -141,17 +148,17 @@ func ExpenseReportWorkflow(ctx workflow.Context, report ExpenseReport) (ExpenseD
 
 // Domain, cluster, workflow ID and run ID are left out of the tags below:
 // Cadence Web fills them in from the workflow page.
-var expenseHomeTemplate = template.Must(template.New("expenseHome").Parse(`**{{.report.Employee}}** ({{.report.Department}}) submitted this report at {{.submittedAt}}.
+var expenseHomeTemplate = template.Must(template.New("expenseHome").Funcs(template.FuncMap{"escapeTags": escapeTags}).Parse(`**{{escapeTags .report.Employee}}** ({{escapeTags .report.Department}}) submitted this report at {{.submittedAt}}.
 
 | Status | Requested | Approved |
 |--------|-----------|----------|
-| {{.statusBadge}} | {{.requested}} | {{.approved}} |
+| {{.statusBadge}} | {{escapeTags .requested}} | {{escapeTags .approved}} |
 
 ### Line items
 
 | Description | Category | Amount |
 |-------------|----------|--------|
-{{range .report.Items}}| {{.Description}} | {{.Category}} | {{printf "%.2f" .Amount}} |
+{{range .report.Items}}| {{escapeTags .Description}} | {{escapeTags .Category}} | {{printf "%.2f" .Amount}} |
 {{end}}
 {{if .isPending}}
 ### Review
@@ -165,7 +172,7 @@ Approve or reject within 1 hour, or the report expires.
 {{else}}
 ### Decision
 
-**{{.decision.Reviewer}}** decided at {{.decidedAt}}: *{{.decision.Comment}}*
+**{{escapeTags .decision.Reviewer}}** decided at {{.decidedAt}}: *{{escapeTags .decision.Comment}}*
 {{end}}
 ---
 
@@ -173,7 +180,7 @@ Approve or reject within 1 hour, or the report expires.
 
 Status: {% searchAttributes name="CustomKeywordField" /%}
 
-Report ID: {% input path="[0].reportId" /%}
+Employee: {% input path="[0].employee" /%}
 
 Approved amount: {% result path="approvedAmount" /%}
 
@@ -190,7 +197,7 @@ Approved amount: {% result path="approvedAmount" /%}
 	label="Submit another report"
 	taskList="cadence-samples-worker"
 	timeoutSeconds=7200
-	input={"reportId":"EXP-{{.nextID}}","employee":"{{.report.Employee}}","department":"{{.report.Department}}","currency":"{{.report.Currency}}","items":[{"description":"Team lunch","category":"Meals","amount":$newAmount}]}
+	input={"employee":"{{.report.Employee}}","department":"{{.report.Department}}","currency":"{{.report.Currency}}","items":[{"description":"Team lunch","category":"Meals","amount":$newAmount}]}
 /%}
 `))
 
@@ -211,7 +218,6 @@ func makeExpenseHome(report ExpenseReport, decision ExpenseDecision, submittedAt
 		"halfRaw":     fmt.Sprintf("%.2f", half),
 		"submittedAt": submittedAt.Format("2006-01-02 15:04:05"),
 		"decidedAt":   decision.DecidedAt.Format("2006-01-02 15:04:05"),
-		"nextID":      submittedAt.Format("20060102-150405"),
 	})
 	if err != nil {
 		return expenseHomeFormattedResponse{}, err
@@ -221,8 +227,13 @@ func makeExpenseHome(report ExpenseReport, decision ExpenseDecision, submittedAt
 		CadenceResponseType: "formattedData",
 		Format:              "text/markdown",
 		Data:                markdown.String(),
-		Title:               "Expense report " + report.ReportID,
+		Title:               "Expense report from " + report.Employee,
 	}, nil
+}
+
+// escapeTags stops user text from adding Markdoc tags. Markdown shows &#123; as "{".
+func escapeTags(s string) string {
+	return strings.ReplaceAll(s, "{%", "&#123;%")
 }
 
 func getExpenseStatusBadge(status string) string {
