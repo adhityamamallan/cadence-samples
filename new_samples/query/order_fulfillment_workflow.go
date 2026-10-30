@@ -120,8 +120,8 @@ func OrderFulfillmentWorkflow(ctx workflow.Context) error {
 	}
 
 	// Register query handler for the ops dashboard
-	workflow.SetQueryHandler(ctx, "home", func() (orderDashboardFormattedResponse, error) {
-		logger.Info("Responding to 'home' query")
+	workflow.SetQueryHandler(ctx, "dashboard", func() (orderDashboardFormattedResponse, error) {
+		logger.Info("Responding to 'dashboard' query")
 		return makeOrderDashboard(ctx, order, actionLog), nil
 	})
 
